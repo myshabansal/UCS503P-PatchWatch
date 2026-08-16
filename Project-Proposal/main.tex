@@ -1,1 +1,249 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{xcolor}
 
+% -----------------------------------------------------
+% bvraghav-tiet-ucs503p-article.sty
+% -----------------------------------------------------
+
+% Variable: Lab Instructor
+\makeatletter \newcommand{\BvrSetLabInstructor}[1]{%
+  \gdef\Bvr@LabInstructor{#1}}
+% default
+\newcommand{\Bvr@LabInstructor}{Paramveer Sidhu}
+% public accessor
+\newcommand{\BvrLabInstructorValue}{\Bvr@LabInstructor}
+\makeatother
+
+% Add subtitle
+\usepackage{titling}
+% -- Set title bold
+\pretitle{\begin{center}\bfseries\fontsize{18bp}{18bp}\selectfont}
+\makeatletter
+\newcommand{\BvrSubtitle}[1]{%
+  \posttitle{%
+    \par\end{center}
+    \begin{center}\large#1\end{center}
+    \vskip 0.5em}%
+}
+\makeatother
+
+% Hints in the section title(s)
+\newcommand{\BvrHint}[1]{%
+  {\normalfont\normalsize\itshape\hfill #1}}
+
+% -----------------------------------------------------
+
+\title{PatchWatch: An Automated Dependency Vulnerability and Update Monitoring System}
+
+\BvrSetLabInstructor{Paramveer Sidhu}
+
+\BvrSubtitle{%
+  Project Proposal for UCS503P  \\
+  Submitted to: \BvrLabInstructorValue \\ \bfseries
+  Thapar Institute of Engineering and Technology% 
+}
+
+\author{
+  Diya Gupta, CSED%
+  \thanks{Roll No: \texttt{1024030004}}
+  \and 
+  Mysha Bansal, CSED%
+  \thanks{Roll No: \texttt{1024030010}}
+  \and 
+  Durva Garg, CSED%
+  \thanks{Roll No: \texttt{1024030007}}
+}
+
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Higher-order goal%
+  \BvrHint{\ldots secondary framing}}
+This project aims to improve software supply-chain
+hygiene by reducing the time and effort developers spend
+tracking, evaluating, and applying dependency updates.
+While the underlying problem (dependency drift and
+unpatched vulnerabilities) is broad, the immediate
+engineering objective is to translate \emph{actionable
+  dependency risk awareness} into a measurable, deployable
+software solution.
+
+\section{Time-to-value %
+\BvrHint{\ldots primary heuristic}}
+\begin{itemize}[leftmargin=0.7cm]
+    \item We will deliver meaningful increments quickly by prototyping the core scan-and-alert workflow (scan a repository, detect outdated/vulnerable dependencies, surface them) and validating it against real open-source repositories within a short iteration window.
+    \item We will prioritize fast feedback over perfection by using weekly iterations (and targeting CI-backed automation early) to reduce release friction.
+    \item Success is defined by what can be delivered and measured in the first iteration -- a working scanner and dashboard -- then improved based on feedback from test repositories and users.
+\end{itemize}
+
+\section{Problem Statement}
+Developers maintaining real-world projects struggle to keep dependencies both up to date and secure. Common pain points include:
+\begin{itemize}[leftmargin=0.7cm]
+    \item \textbf{Fragmentation:} dependency health information is scattered across registries (npm, PyPI, Maven), vulnerability databases (OSV, NVD, GitHub Advisory Database), and changelogs, with no single actionable view.
+    \item \textbf{Low signal-to-noise:} generic ``newer version available'' tools flag every update equally, causing alert fatigue and making developers ignore genuinely critical security patches.
+    \item \textbf{No project-specific impact analysis:} existing tools rarely tell a developer \emph{whether their own code} actually uses the affected API/behavior, or which files would need changes.
+    \item \textbf{Slow remediation:} even when an update is known to be needed, manually editing manifests, verifying, and testing the change takes time that delays patching.
+\end{itemize}
+
+\textbf{Why this matters now (contextual relevance):} Supply-chain attacks and dependency-based vulnerabilities (e.g., prototype pollution, deserialization flaws) are an increasingly common attack vector; a lightweight tool that turns a firehose of registry/vulnerability data into a prioritized, project-aware action list can meaningfully reduce the window of exposure.
+
+\section{Proposed Solution %
+\BvrHint{\ldots Software Proposition}}
+\subsection{Overview}
+Build a \textbf{web-based} ``PatchWatch'' system --- a lightweight, Dependabot-style tool that watches a project's dependencies, detects new releases and security patches, checks whether they matter to the project, and tells the developer what to update and why. Core components:
+\begin{itemize}[leftmargin=0.7cm]
+    \item \textbf{Dependency scanner:} parses manifest files (\texttt{package.json}, \texttt{requirements.txt}, \texttt{pom.xml}) to extract current dependency versions.
+    \item \textbf{Version monitor:} periodically checks package registries (npm, PyPI, Maven) for newer releases.
+    \item \textbf{Security intelligence:} cross-references dependencies against vulnerability databases (OSV, NVD, GitHub Advisory Database).
+    \item \textbf{Update classification:} labels each available update as patch/minor/major and flags security-relevant ones.
+    \item \textbf{Impact analysis:} performs a lightweight static scan of the codebase to identify which files actually use the affected package/API, so alerts are project-specific rather than generic.
+    \item \textbf{Dashboard and GitHub integration:} presents a prioritized view of dependency risk and can open a pull request for a recommended, low-risk update.
+\end{itemize}
+
+\subsection{Core workflow}
+\begin{enumerate}[leftmargin=0.7cm]
+    \item Developer connects a GitHub repository; PatchWatch scans manifest files and builds a dependency list.
+    \item PatchWatch checks each dependency against the relevant package registry (new version?) and vulnerability databases (known CVE/advisory affecting the current version?).
+    \item The update analyzer classifies each available update (patch/minor/major) and determines security severity.
+    \item The impact analyzer greps/parses the codebase to find files that import or call the affected package, estimating project impact and required migration effort.
+    \item PatchWatch produces a ranked dashboard entry and, optionally, opens an automated pull request with the recommended version bump and a summary of why the change is safe.
+\end{enumerate}
+
+\subsection{Operational constraints for an educational, capstone setting}
+\begin{itemize}[leftmargin=0.7cm]
+    \item Initially support a small set of ecosystems (JavaScript/npm, Python/pip, Java/Maven) rather than trying to cover every package manager.
+    \item Avoid dependence on advanced research algorithms (no ML); focus on registry/vulnerability-DB integration, classification heuristics, and lightweight static analysis.
+    \item Design for deployability using common web hosting, a managed database, and background job workers for periodic scans.
+\end{itemize}
+
+\section{Solution Approach %
+\BvrHint{\ldots Engineering focus}}
+This is an engineering course project, so we focus on scalable data-integration and workflow aspects rather than novel algorithm research.
+
+\subsection{Update classification and impact analysis %
+\BvrHint{\ldots non-research}}
+Classification and impact detection will be heuristic-based, not ML-based:
+\begin{itemize}[leftmargin=0.7cm]
+    \item Use semantic-version parsing to classify an update as patch, minor, or major.
+    \item Cross-reference the current version range against vulnerability database entries (OSV/NVD/GitHub Advisory) to flag security-relevant updates and assign a severity (low/medium/high/critical).
+    \item Use simple static analysis (import/require statements, Tree-sitter or language ASTs) to list files referencing the affected package, without claiming complete or state-of-the-art code understanding.
+    \item Always present recommendations to the developer for review; never auto-merge without explicit approval.
+\end{itemize}
+
+\subsection{Web architecture %
+\BvrHint{\ldots web-based solution}}
+A typical 3-tier web architecture with an added background-processing layer:
+\begin{itemize}[leftmargin=0.7cm]
+    \item \textbf{Frontend:} responsive dashboard for viewing dependency risk, drilling into a specific package, and triggering PR creation.
+    \item \textbf{Backend API:} authentication (GitHub OAuth), repository management, scan orchestration, classification/impact endpoints.
+    \item \textbf{Background jobs:} scheduled workers that poll package registries and vulnerability databases and re-scan repositories.
+    \item \textbf{Database:} stores repositories, dependency snapshots, scan history, vulnerability matches, and PR status.
+\end{itemize}
+
+\subsection{CI/CD and fast delivery enabler}
+CI/CD will be used to:
+\begin{itemize}[leftmargin=0.7cm]
+    \item Automatically build and run tests on every change to the PatchWatch codebase itself.
+    \item Produce repeatable deployment artifacts to staging.
+    \item Enable safe and frequent releases of incremental features (new ecosystem support, new vulnerability sources, etc.).
+\end{itemize}
+
+\section{Evaluation Criterion %
+\BvrHint{\ldots measurable and attributable}}
+We define success using measurable metrics tied to the core scan-detect-alert workflow.
+
+\subsection{Primary evaluation metric}
+\textbf{Time-to-detection (TTD):} time between a security advisory/patch being published for a dependency and PatchWatch surfacing an alert for a repository that uses the affected version.
+\begin{itemize}[leftmargin=0.7cm]
+    \item Target: median TTD $\le$ 24 hours for repositories under active scanning during the pilot window.
+    \item Attribution: measured from advisory publish timestamp (per OSV/NVD/GitHub Advisory) vs. PatchWatch alert-creation timestamp.
+\end{itemize}
+
+\subsection{Secondary evaluation metrics}
+\begin{itemize}[leftmargin=0.7cm]
+    \item \textbf{Alert precision:} percentage of security alerts that are relevant (i.e., the flagged package/API is actually used in the codebase), reducing noise compared to naive ``new version available'' tools.
+    \item \textbf{PR acceptance rate:} percentage of automatically generated update pull requests that pass CI and are merged without manual edits, on pilot test repositories.
+    \item \textbf{Coverage:} number/percentage of dependencies across supported ecosystems successfully scanned and classified per repository.
+    \item \textbf{Reliability:} availability of the scanning service and dashboard during business hours (e.g., $\ge$ 99\% uptime in pilot).
+\end{itemize}
+
+\subsection{Pilot validation plan %
+\BvrHint{\ldots high-level}}
+\begin{itemize}[leftmargin=0.7cm]
+    \item Connect PatchWatch to 10--15 pilot repositories (a mix of team projects and public open-source repositories with known historical vulnerabilities).
+    \item Compare PatchWatch's detection timing and alert quality against manually checking registries/advisories for the same repositories over the iteration window.
+\end{itemize}
+
+\section{Scalability %
+\BvrHint{\ldots with foresight}}
+The proposition should scale in both theoretical and practical senses.
+
+\begin{enumerate}[leftmargin=0.7cm]
+    \item \textbf{Scalable (theoretically):} The system should support growth in number of monitored repositories and dependencies by:
+    \begin{itemize}[leftmargin=0.7cm]
+        \item decoupling scanning/analysis workers from the API and dashboard,
+        \item queuing and rate-limiting registry/vulnerability-DB requests (e.g., via Redis-backed job queues),
+        \item enabling pagination and indexing for common dashboard queries.
+    \end{itemize}
+    
+    \item \textbf{Operationally deployable (practically):} The system should run on common web hosting:
+    \begin{itemize}[leftmargin=0.7cm]
+        \item managed relational database,
+        \item containerized or platform-hosted deployment,
+        \item CI/CD pipeline for staging/production.
+    \end{itemize}
+\end{enumerate}
+
+\section{Engine availability heuristic}
+A mature set of ``engines'' (tooling/services) is available to implement this as a web-based project:
+\begin{itemize}[leftmargin=0.7cm]
+    \item Web framework for REST APIs and a reactive dashboard (Node.js/Express backend, React/TypeScript frontend).
+    \item Managed relational database (PostgreSQL) with an ORM (Prisma).
+    \item Background job queue for scheduled scans (Redis + BullMQ).
+    \item Public registries and databases: npm/PyPI/Maven registry APIs, OSV API, NVD, GitHub Advisory Database.
+    \item GitHub REST API and OAuth for repository access and PR creation.
+    \item Lightweight code-analysis tooling (Tree-sitter / language ASTs) for impact detection.
+    \item Test framework for unit/integration tests; CI runner and staging deployment target (e.g., Vercel + Render/Railway, Docker).
+\end{itemize}
+We will use these mature components to focus on data integration, classification logic, and measurement rather than inventing new infrastructure.
+
+\section{Project scope and deliverables %
+\BvrHint{\ldots iteration-friendly}}
+\subsection{Initial deliverable %
+\BvrHint{\ldots first iteration}}
+\begin{itemize}[leftmargin=0.7cm]
+    \item Dependency scanner for one ecosystem (npm/\texttt{package.json}) extracting current versions.
+    \item Version monitor querying the npm registry for latest versions.
+    \item Basic dashboard listing dependencies with current vs. latest version and simple patch/minor/major classification.
+    \item Basic logging and timestamps for TTD measurement.
+    \item CI: build + backend unit tests + linting.
+    \item CD to staging with a single command or pipeline job.
+\end{itemize}
+
+\subsection{Subsequent deliverables}
+\begin{itemize}[leftmargin=0.7cm]
+    \item Security intelligence integration (OSV/NVD/GitHub Advisory Database) with severity scoring.
+    \item Impact analysis: static-analysis pass identifying files/usages affected by a given dependency update.
+    \item GitHub OAuth integration, repository scanning, and automatic pull-request creation for recommended updates.
+    \item Support for additional ecosystems (Python/\texttt{requirements.txt}, Java/\texttt{pom.xml}).
+    \item Notification layer and richer admin dashboard (backlog of unresolved security issues, historical trends).
+\end{itemize}
+
+\section{Risks and mitigations}
+\begin{itemize}[leftmargin=0.7cm]
+    \item \textbf{Third-party API rate limits:} registry and vulnerability-DB APIs may throttle requests; mitigate with caching, batching, and a background job queue rather than synchronous on-demand calls.
+    \item \textbf{False positives/negatives in impact analysis:} static analysis may miss dynamic usages or over-flag files; mitigate by presenting impact analysis as an aid for developer review, not an automatic gate.
+    \item \textbf{Data staleness:} vulnerability databases and registries update independently; mitigate with a defined re-scan interval and clear ``last checked'' timestamps.
+    \item \textbf{Team adoption of auto-generated PRs:} developers may distrust automated updates; mitigate by keeping PRs low-risk by default (patch/security-only), always running tests, and never auto-merging.
+\end{itemize}
+
+\section{Summary}
+This project proposes PatchWatch, a deployable web platform that reduces the time and effort required to detect, prioritize, and remediate outdated or vulnerable project dependencies. It meets the course criteria by emphasizing time-to-value through rapid iterations, implementing CI/CD to support frequent safe releases, and using measurable evaluation criteria (especially time-to-detection and alert precision). It remains focused on engineering integration, classification, and workflow design rather than research-driven novelty, while still offering a substantial, demonstrable end-to-end system (scanner $\rightarrow$ security intelligence $\rightarrow$ impact analysis $\rightarrow$ dashboard $\rightarrow$ automated PR).
+
+\end{document}
