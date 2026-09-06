@@ -57,6 +57,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = () => {
     localStorage.removeItem('patchwatch_token');
+    localStorage.removeItem('patchwatch_user');
     setToken(null);
     setUser(null);
   };
