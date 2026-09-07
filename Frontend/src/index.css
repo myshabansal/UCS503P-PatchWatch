@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Severity colors — reserved exclusively for risk/vulnerability signaling,
+     never used decoratively elsewhere in the UI. */
+  --color-severity-critical: #dc2626;
+  --color-severity-high: #ea580c;
+  --color-severity-moderate: #d97706;
+  --color-severity-low: #16a34a;
+
+  /* Brand accent — used for actions, links, active nav state. */
+  --color-brand: #4338ca;
+  --color-brand-light: #eef2ff;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+}
