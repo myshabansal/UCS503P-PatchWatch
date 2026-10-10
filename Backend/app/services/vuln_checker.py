@@ -1,60 +1,65 @@
+import asyncio
+
 import httpx
 
 OSV_API_URL = "https://api.osv.dev/v1/query"
+SEVERITY_ORDER = ["UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
+MAX_CONCURRENT = 10
 
 
-async def check_package_vulnerabilities(name: str, version: str) -> dict:
-    """
-    Query OSV.dev for known vulnerabilities affecting a specific
-    npm package version. Returns a dict summarizing findings.
-    """
-    payload = {
-        "version": version,
-        "package": {
-            "name": name,
-            "ecosystem": "npm"
-        }
-    }
+def _severity(vuln: dict) -> str:
+    """GitHub advisories carry a plain label in database_specific.severity."""
+    label = str(vuln.get("database_specific", {}).get("severity", "")).upper()
+    if label == "MODERATE":
+        label = "MEDIUM"
+    return label if label in SEVERITY_ORDER else "UNKNOWN"
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+
+def _fixed_versions(vuln: dict, package: str) -> list[str]:
+    fixed = set()
+    for affected in vuln.get("affected", []):
+        if affected.get("package", {}).get("name") != package:
+            continue
+        for rng in affected.get("ranges", []):
+            for event in rng.get("events", []):
+                if "fixed" in event:
+                    fixed.add(event["fixed"])
+    return sorted(fixed)
+
+
+async def _check_one(client: httpx.AsyncClient, sem: asyncio.Semaphore, dep: dict) -> dict:
+    name, version = dep["name"], dep["version"]
+    base = {"name": name, "version": version, "spec": dep.get("spec"), "dev": dep.get("dev", False)}
+
+    if not version:
+        return {**base, "status": "skipped", "vulnerabilities": [],
+                "error": "Version could not be resolved (e.g. '*', 'latest', git URL)"}
+
+    payload = {"version": version, "package": {"name": name, "ecosystem": "npm"}}
+    async with sem:
         try:
-            response = await client.post(OSV_API_URL, json=payload)
-            response.raise_for_status()
-            data = response.json()
+            resp = await client.post(OSV_API_URL, json=payload)
+            resp.raise_for_status()
+            vulns = resp.json().get("vulns", [])
         except httpx.HTTPError as e:
-            return {
-                "name": name,
-                "version": version,
-                "error": f"Failed to query OSV: {str(e)}",
-                "vulnerabilities": []
-            }
+            return {**base, "status": "error", "vulnerabilities": [],
+                    "error": f"OSV query failed: {e}"}
 
-    vulns = data.get("vulns", [])
-
-    findings = []
-    for v in vulns:
-        findings.append({
+    findings = [
+        {
             "id": v.get("id"),
-            "summary": v.get("summary", "No summary available"),
-            "severity": v.get("severity", []),
-            "aliases": v.get("aliases", [])
-        })
-
-    return {
-        "name": name,
-        "version": version,
-        "vulnerable": len(findings) > 0,
-        "vulnerabilities": findings
-    }
+            "summary": v.get("summary") or "No summary available",
+            "severity": _severity(v),
+            "fixed_versions": _fixed_versions(v, name),
+            "aliases": v.get("aliases", []),
+        }
+        for v in vulns
+    ]
+    return {**base, "status": "vulnerable" if findings else "ok", "vulnerabilities": findings}
 
 
 async def check_all_dependencies(dependencies: list[dict]) -> list[dict]:
-    """
-    Takes the list of {name, version} dicts from parse_package_json
-    and checks each one against OSV.dev.
-    """
-    results = []
-    for dep in dependencies:
-        result = await check_package_vulnerabilities(dep["name"], dep["version"])
-        results.append(result)
-    return results
+    """Check every dependency against OSV.dev concurrently."""
+    sem = asyncio.Semaphore(MAX_CONCURRENT)
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        return await asyncio.gather(*(_check_one(client, sem, d) for d in dependencies))
