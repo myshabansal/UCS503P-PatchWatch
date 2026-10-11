@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { Waypoints } from 'lucide-react'
 import { AppLayout } from '../layouts/AppLayout'
@@ -8,7 +8,7 @@ import { RiskHistoryChart } from '../components/RiskHistoryChart'
 import { PriorityFixList } from '../components/PriorityFixList'
 import { DependencyTable } from '../components/DependencyTable'
 import { useBackendHealth } from '../hooks/useBackendHealth'
-import { fetchProjectDashboard } from '../services/mockData'
+import { fetchProjectDashboard, uploadScan, waitForScan } from '../services/projectService'
 import type { ProjectDashboardData } from '../types/project'
 
 function BackendStatusPill() {
@@ -30,18 +30,41 @@ export function DashboardPage() {
   const { projectId } = useParams<{ projectId: string }>()
   const [data, setData] = useState<ProjectDashboardData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const [scanError, setScanError] = useState<string | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+
+  function load(id: string) {
+    return fetchProjectDashboard(id)
+      .then((result) => setData(result))
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load project'))
+  }
 
   useEffect(() => {
     if (!projectId) return
     setData(null)
     setError(null)
-    fetchProjectDashboard(projectId)
-      .then((result) => setData(result))
-      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load project'))
+    load(projectId)
   }, [projectId])
 
+  async function handleFile(file: File | undefined) {
+    if (!file || !projectId) return
+    setScanError(null)
+    setScanning(true)
+    try {
+      const scanId = await uploadScan(projectId, file)
+      await waitForScan(scanId)
+      await load(projectId)
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : 'Scan failed')
+    } finally {
+      setScanning(false)
+      if (fileInput.current) fileInput.current.value = ''
+    }
+  }
+
   if (!projectId) {
-    return <Navigate to="/dashboard/proj-1" replace />
+    return <Navigate to="/projects" replace />
   }
 
   if (error) {
@@ -89,10 +112,32 @@ export function DashboardPage() {
               <p className="mt-1 text-sm text-slate-500">{project.description}</p>
             )}
           </div>
-          <button className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-            Rescan
-          </button>
+          <div>
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".json,.txt"
+              className="hidden"
+              onChange={(e) => handleFile(e.target.files?.[0])}
+            />
+            <button
+              disabled={scanning}
+              onClick={() => fileInput.current?.click()}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              {scanning ? 'Scanning…' : dependencies.length ? 'Rescan (upload file)' : 'Upload & scan'}
+            </button>
+          </div>
         </div>
+
+        {scanError && (
+          <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{scanError}</p>
+        )}
+        {dependencies.length === 0 && !scanning && (
+          <p className="mt-4 rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-400">
+            No scan results yet. Upload a package.json or requirements.txt to scan this project.
+          </p>
+        )}
 
         <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-[auto_1fr]">
           <RiskScoreCard score={project.riskScore} category={project.riskCategory} />

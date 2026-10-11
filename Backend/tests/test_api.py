@@ -1,58 +1,227 @@
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-
-from app import main
-from app.database import Base, get_db
 
 
-@pytest.fixture()
-def client(monkeypatch):
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine)
-
-    def override_db():
-        db = Session()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    async def fake_check(deps):
-        return [
-            {
-                "name": d["name"], "version": d["version"], "spec": d["spec"], "dev": d["dev"],
-                "status": "vulnerable",
-                "vulnerabilities": [{"id": "GHSA-test", "summary": "bad", "severity": "HIGH",
-                                     "fixed_versions": ["9.9.9"], "aliases": ["CVE-0000-0001"]}],
-            }
-            for d in deps
-        ]
-
-    monkeypatch.setattr(main, "check_all_dependencies", fake_check)
-    main.app.dependency_overrides[get_db] = override_db
-    yield TestClient(main.app)
-    main.app.dependency_overrides.clear()
+class TestHealthEndpoints:
+    """Test health and status endpoints."""
+    
+    def test_root_endpoint(self, client):
+        """Test root endpoint."""
+        response = client.get("/")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["message"] == "PatchWatch API is running"
+        assert data["version"] == "2.0.0"
+        assert data["status"] == "healthy"
+    
+    def test_health_endpoint(self, client):
+        """Test health check endpoint."""
+        response = client.get("/health")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["status"] == "healthy"
+        assert data["version"] == "2.0.0"
 
 
-def test_scan_saves_and_lists(client):
-    body = b'{"dependencies": {"lodash": "4.17.15"}}'
-    r = client.post("/scan", files={"file": ("package.json", body, "application/json")})
-    assert r.status_code == 200
-    assert r.json()["severity_counts"]["high"] == 1
+class TestAuthenticationEndpoints:
+    """Test authentication endpoints."""
+    
+    def test_register_user(self, client):
+        """Test user registration."""
+        user_data = {
+            "email": "newuser@example.com",
+            "password": "NewPassword123!",
+            "full_name": "New User"
+        }
+        
+        response = client.post("/api/v1/auth/register", json=user_data)
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["email"] == user_data["email"]
+        assert data["full_name"] == user_data["full_name"]
+        assert data["is_active"] is True
+        assert "id" in data
+    
+    def test_register_duplicate_email(self, client, test_user):
+        """Test registration with duplicate email."""
+        user_data = {
+            "email": test_user.email,
+            "password": "NewPassword123!",
+            "full_name": "Duplicate User"
+        }
+        
+        response = client.post("/api/v1/auth/register", json=user_data)
+        assert response.status_code == 400
+        assert "already registered" in response.json()["detail"]
+    
+    def test_register_weak_password(self, client):
+        """Test registration with weak password."""
+        user_data = {
+            "email": "weakpass@example.com",
+            "password": "weakweakweak",
+            "full_name": "Weak Password User"
+        }
+        
+        response = client.post("/api/v1/auth/register", json=user_data)
+        assert response.status_code == 400
+        assert "Password validation failed" in response.json()["detail"]
+    
+    def test_login_valid_credentials(self, client, test_user):
+        """Test login with valid credentials."""
+        login_data = {
+            "email": test_user.email,
+            "password": "testpassword123"
+        }
+        
+        response = client.post("/api/v1/auth/login", json=login_data)
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "access_token" in data
+        assert data["token_type"] == "bearer"
+    
+    def test_login_invalid_credentials(self, client, test_user):
+        """Test login with invalid credentials."""
+        login_data = {
+            "email": test_user.email,
+            "password": "wrongpassword"
+        }
+        
+        response = client.post("/api/v1/auth/login", json=login_data)
+        assert response.status_code == 401
+        assert "Invalid email or password" in response.json()["detail"]
+    
+    def test_login_nonexistent_user(self, client):
+        """Test login with nonexistent user."""
+        login_data = {
+            "email": "nonexistent@example.com",
+            "password": "password123"
+        }
+        
+        response = client.post("/api/v1/auth/login", json=login_data)
+        assert response.status_code == 401
+        assert "Invalid email or password" in response.json()["detail"]
+    
+    def test_get_current_user(self, client, auth_headers):
+        """Test getting current user information."""
+        response = client.get("/api/v1/auth/me", headers=auth_headers)
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["email"] == "test@example.com"
+        assert data["full_name"] == "Test User"
+        assert data["is_active"] is True
+    
+    def test_get_current_user_unauthorized(self, client):
+        """Test getting current user without authentication."""
+        response = client.get("/api/v1/auth/me")
+        assert response.status_code == 403
 
-    assert len(client.get("/scans").json()) == 1
-    assert client.get("/scans/1").json()["findings"][0]["fixed_versions"] == ["9.9.9"]
-    assert client.get("/stats").json()["vulnerable_deps"] == 1
-    assert client.delete("/scans/1").status_code == 200
-    assert client.get("/scans/1").status_code == 404
+
+class TestProjectEndpoints:
+    """Test project management endpoints."""
+    
+    def test_create_project(self, client, auth_headers):
+        """Test creating a new project."""
+        project_data = {
+            "name": "Test Project",
+            "description": "A test project for PatchWatch",
+            "repository_url": "https://github.com/user/repo"
+        }
+        
+        response = client.post("/api/v1/projects/", json=project_data, headers=auth_headers)
+        assert response.status_code == 201
+        
+        data = response.json()
+        assert data["name"] == project_data["name"]
+        assert data["description"] == project_data["description"]
+        assert data["repository_url"] == project_data["repository_url"]
+        assert "id" in data
+    
+    def test_create_project_unauthorized(self, client):
+        """Test creating project without authentication."""
+        project_data = {"name": "Test Project"}
+        
+        response = client.post("/api/v1/projects/", json=project_data)
+        assert response.status_code == 403
+    
+    def test_list_projects(self, client, auth_headers):
+        """Test listing user projects."""
+        # Create a project first
+        project_data = {"name": "Test Project", "description": "Test"}
+        client.post("/api/v1/projects/", json=project_data, headers=auth_headers)
+        
+        response = client.get("/api/v1/projects/", headers=auth_headers)
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert len(data) >= 1
+        assert data[0]["name"] == "Test Project"
+    
+    def test_get_project(self, client, auth_headers):
+        """Test getting a specific project."""
+        # Create a project first
+        project_data = {"name": "Get Test Project", "description": "Test"}
+        create_response = client.post("/api/v1/projects/", json=project_data, headers=auth_headers)
+        project_id = create_response.json()["id"]
+        
+        response = client.get(f"/api/v1/projects/{project_id}", headers=auth_headers)
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["name"] == "Get Test Project"
+        assert data["id"] == project_id
+    
+    def test_update_project(self, client, auth_headers):
+        """Test updating a project."""
+        # Create a project first
+        project_data = {"name": "Update Test Project", "description": "Test"}
+        create_response = client.post("/api/v1/projects/", json=project_data, headers=auth_headers)
+        project_id = create_response.json()["id"]
+        
+        update_data = {"name": "Updated Project Name"}
+        response = client.patch(f"/api/v1/projects/{project_id}", json=update_data, headers=auth_headers)
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["name"] == "Updated Project Name"
+        assert data["description"] == "Test"  # Should remain unchanged
+    
+    def test_delete_project(self, client, auth_headers):
+        """Test deleting a project."""
+        # Create a project first
+        project_data = {"name": "Delete Test Project", "description": "Test"}
+        create_response = client.post("/api/v1/projects/", json=project_data, headers=auth_headers)
+        project_id = create_response.json()["id"]
+        
+        response = client.delete(f"/api/v1/projects/{project_id}", headers=auth_headers)
+        assert response.status_code == 204
+        
+        # Verify project is deleted
+        get_response = client.get(f"/api/v1/projects/{project_id}", headers=auth_headers)
+        assert get_response.status_code == 404
 
 
-def test_bad_json_rejected(client):
-    r = client.post("/scan", files={"file": ("package.json", b"not json", "application/json")})
-    assert r.status_code == 400
+class TestLegacyEndpoints:
+    """Test legacy endpoint redirects."""
+    
+    def test_legacy_scan_endpoints(self, client):
+        """Test that legacy endpoints return proper redirect responses."""
+        response = client.get("/api/scan")
+        assert response.status_code == 301
+        assert "moved" in response.json()["detail"].lower()
+        
+        response = client.post("/scan")
+        assert response.status_code == 301
+        assert "moved" in response.json()["detail"].lower()
+        
+        response = client.get("/scans")
+        assert response.status_code == 301
+        assert "moved" in response.json()["detail"].lower()
+        
+        response = client.get("/stats")
+        assert response.status_code == 301
+        assert "moved" in response.json()["detail"].lower()

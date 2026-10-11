@@ -9,7 +9,7 @@ export interface Project {
   description?: string
   riskScore: number
   riskCategory: RiskCategory
-  lastScanAt: string
+  lastScanAt: string | null
 }
 
 export interface Dependency {

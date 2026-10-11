@@ -1,5 +1,5 @@
 export interface HealthStatus {
-  status: 'ok' | 'error'
+  status: string
   database?: 'connected' | 'unreachable'
   detail?: string
 }
